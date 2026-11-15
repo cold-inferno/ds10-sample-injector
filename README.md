@@ -55,9 +55,6 @@ stop playback. Pitch per step works as usual in the drum sequencer.
 
 ## Known issues
 
-- **A scratch at the end of the preview in the drum editor.** Just before each new preview note, you may hear
-  a short scratchy buzz while editing a drum. It only happens in the drum editor's preview. **You won't hear it
-  in normal playback.**
 - Loops longer than about half a second, ending after the first second, are shortened with a crossfade so
   they fit in a drum slot.
 - The other drum knobs do nothing in the patched ROM. One-shot sounds ignore EG ATT/SUS/DEC.

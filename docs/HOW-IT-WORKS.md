@@ -143,23 +143,28 @@ starts.
 
 ### 2.3 The drum-editor preview
 
-**Timeline.** A debug build logged the order of every render call. Each block runs end stage → synth voices →
-the 4 drum sample voices.
-
 **How the editor plays its preview.** It plays the edited drum through synth voice 1 and an end stage
-(`M+0x160`). That end stage:
+(`M+0x160`), which writes the editor's stereo output and fades each preview note after one second.
 
-- writes the editor's stereo output
-- fades each preview note after one second
-- stops rendering just before the next preview note
+**The audio pipeline.** Per 64-sample block, the mixer render (`0x0201DB74`) renders the voices first
+(both synth voices, then the four drum sample voices), then the end stage, then a recorder (`M+0x164`).
+The DS sound hardware plays the mixer's output directly: SPU channels 0/1 loop over a ring of two 64-sample
+blocks per channel (`0x021E63C0`/`0x021E64C0`). A sound alarm toggles `mixer+0x16` every block to say which
+half is playing; the mixer fills the other half.
+
+**The pause before each preview note.** The recorder captures one second after every preview note (that
+recording is what the original game turns into the drum sample). When it's full, the mixer spends 64 blocks
+clearing the end stage's delay lines instead of rendering it, and nothing writes the output ring. In the
+original game the preview has faded by then, so the ring loops silence; with a looped sample it looped the
+last two blocks, which sounded like a scratchy buzz.
 
 **What changed:**
 
 - The end stage's render (vtable entry 3) is hooked. After it runs, its output is replaced with the edited
   drum's sample voice block, in both channels. That removes the 1-second fade.
-- The hardware plays the mixer's two output pairs directly (SPU channels 0/1 read `0x021E63C0`/`0x021E64C0`):
-  a ring of two 64-sample blocks per channel, which the end stage fills alternately. During the end stage's
-  pause, the synth hook carries on that alternation. This didn't remove the buzz (see §5).
+- The sample voice's render hook also copies the edited drum's block into both channels of the half the
+  mixer is filling (`mixer+0x24 + 8 × (mixer+0x16 XOR 1)`), every block in the drum editor. That keeps the
+  ring fed during the 64-block pause, so the preview plays straight through.
 
 ---
 
@@ -176,26 +181,27 @@ Everything else, including the ARM7 binary and the save format, is unchanged.
 | `0x02032910` | `strb r6,[r0,#0xAA8]` (`E5C06AA8`) | `bl DrumParamChanged` (`EBFF16FE`) | knob handler: reload when a selector knob changes |
 | `0x02023A1C`…`2C` | end-of-sample clamp (5 insns) | `bl LoopCheck` + 4 × `nop` | looping |
 | `0x02072FDC` | `.word 0x020219B8` | `.word 0x01FF8558` | synth voice render → `SynthVoiceRender` |
-| `0x02073044` | `.word 0x02023968` | `.word 0x01FF877C` | sample voice render → `SampleVoiceRender` |
-| `0x020730F0` | `.word 0x02024578` | `.word 0x01FF8650` | editor end stage render → `EditStageRender` |
+| `0x02073044` | `.word 0x02023968` | `.word 0x01FF86E0` | sample voice render → `SampleVoiceRender` |
+| `0x020730F0` | `.word 0x02024578` | `.word 0x01FF85EC` | editor end stage render → `EditStageRender` |
 
 ### 3.2 New code in ITCM
 
 The ITCM autoload block grew by `0x2000` bytes. The extra room is for the debug build; the release uses
-`0x779`. `build_lib.py` now stops if the code ever outgrows the room.
+`0x74D`. `build_lib.py` now stops if the code ever outgrows the room.
 
 | ITCM | Routine | What it does |
 |---|---|---|
 | `0x01FF8320` | `LoadSlotFromR6/R9` | remember the audio object; take the drum number |
 | `0x01FF833C` | `LoadSlot` | sample number from the knobs, read `/data/smp/NNN.pcm`, fill the loop table, silence the rest, guard sample after the loop |
 | `0x01FF8510` | `DrumParamChanged` | store the knob value; reload on selector knobs (params 6–10) |
-| `0x01FF8558` | `SynthVoiceRender` | editor preview voice: forward note-ons, render the synth, cover the end stage's pauses |
-| `0x01FF8650` | `EditStageRender` / `PutPreview` | editor: replace the end stage's stereo output with the sample voice's block |
-| `0x01FF870C` | `LoopCheck` | wrap at the loop end, or the original clamp |
-| `0x01FF877C` | `SampleVoiceRender` | per drum voice per block: note-on detection, attack / hold / fade |
-| `0x01FF8954` | `DrumPatch`, `DivideU` | helpers |
-| `0x01FF875C`, `…89D4` | `LoopTable`, `EnvTable` | per slot: loop {length, end}; envelope {blocks, fade step, fading, attack step} |
-| `0x01FF8A20` | `PostNoteOn` | add a note-on (type 2, `0x7F3C`) to a voice's queue with interrupts off |
+| `0x01FF8558` | `SynthVoiceRender` | editor preview voice: forward note-ons to the edited drum, render the synth |
+| `0x01FF85EC` | `EditStageRender` / `PutPreview` | editor: replace the end stage's stereo output with the sample voice's block |
+| `0x01FF8670` | `LoopCheck` | wrap at the loop end, or the original clamp |
+| `0x01FF86E0` | `SampleVoiceRender` | per drum voice per block: note-on detection, attack / hold / fade |
+| `0x01FF889C` | `EditorOut` | drum editor: copy the edited drum's block into the half of the output ring being filled |
+| `0x01FF8934` | `DrumPatch`, `DivideU` | helpers |
+| `0x01FF86C0`, `…89B4` | `LoopTable`, `EnvTable` | per slot: loop {length, end}; envelope {blocks, fade step, fading, attack step} |
+| `0x01FF89F8` | `PostNoteOn` | add a note-on (type 2, `0x7F3C`) to a voice's queue with interrupts off |
 
 ### 3.3 Files
 
@@ -225,10 +231,6 @@ The ITCM autoload block grew by `0x2000` bytes. The extra room is for the debug 
 
 ## 5. Known issues and ideas
 
-- **A scratch at the end of the drum editor's preview.** The editor pauses its end stage just before each new
-  preview note, and the hardware loops the last two blocks it was given. Writing the sample into the
-  hardware ring during that pause didn't cure it. It only happens in the drum editor; normal playback is
-  clean.
 - **Long loops:** a loop longer than half a second that ends after the first second is replaced with a
   crossfaded loop inside the first second, so it repeats sooner than in the original sample.
 - **Ideas:** the envelope for one-shot sounds as well; reverse playback, a start offset or the drum

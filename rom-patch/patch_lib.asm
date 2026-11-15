@@ -305,37 +305,6 @@ SynthVoiceRender:
     blne    PostNoteOn
     mov     r0, r4
     bl      SYNTH_RENDER                ; keeps the synth's state; its sound is replaced
-    ; The DS sound hardware plays a ring of two 64-sample blocks per channel, which the editor's
-    ; end stage fills alternately (its output entry points at the mixer's +0x24 or +0x2C pair).
-    ; Just before each preview note the editor stops that stage for a moment; the hardware then
-    ; keeps looping stale blocks (a buzz). In those blocks, carry on the alternation ourselves.
-    ldr     r6, =StageRan
-    ldr     r0, [r6]
-    cmp     r0, 0
-    movne   r0, 0
-    strne   r0, [r6]                    ; the stage ran this block: it wrote the right half
-    bne     @@scaled
-    ldr     r0, =AudioObject
-    ldr     r0, [r0]
-    ldr     r0, [r0, M_MIXER]
-    ldr     r1, [r6, 4]                 ; LastPair: 0 = +0x24 pair, 1 = +0x2C pair
-    eor     r1, r1, 1
-    str     r1, [r6, 4]
-    add     r0, r0, 0x24
-    add     r0, r0, r1, lsl 3
-    ldr     r6, [r0, 4]                 ; right buffer
-    ldr     r0, [r0]                    ; left buffer
-    ldr     r2, [r5, 0x1C]
-    ldr     r2, [r2]                    ; sample voice's block (source)
-    ldrsh   r1, [r4, 0x10]
-@@copy:
-    subs    r1, r1, 1
-    blt     @@scaled
-    ldrh    r3, [r2], 2
-    strh    r3, [r0], 2
-    strh    r3, [r6], 2
-    b       @@copy
-@@scaled:
     pop     {r4-r6, pc}
 @@plain:
     mov     r0, r4
@@ -345,8 +314,8 @@ SynthVoiceRender:
 ; Drum editor end stage render (vtable hook). The stage turns synth 1's channel into the editor's
 ; stereo output, and fades each preview note out after one second (as long as a rendered drum
 ; would last), after which it stops rendering. Replace its output with the edited drum's sample
-; voice block (the game renders that voice every block) so looped samples keep sounding; the
-; synth hook refreshes it too, for the blocks the stage skips. Same level as normal playback.
+; voice block (the game renders that voice every block) so looped samples keep sounding; for the
+; blocks the stage skips, see EditorOut. Same level as normal playback.
 EditStageRender:
     push    {r4, lr}
     mov     r4, r0
@@ -356,21 +325,6 @@ EditStageRender:
     mov     r0, r4                      ; DbgMark used r0: give the original its object back
 .endif
     bl      EDITSTAGE_RENDER
-    ldr     r1, =StageRan               ; tell the synth hook which half the stage just wrote
-    mov     r0, 1
-    str     r0, [r1]
-    ldr     r0, =AudioObject
-    ldr     r0, [r0]
-    cmp     r0, 0
-    beq     @@noted
-    ldr     r0, [r0, M_MIXER]
-    ldr     r2, [r4, 0x1C]              ; output entry = mixer + 0x24 or + 0x2C
-    sub     r2, r2, r0
-    cmp     r2, 0x2C
-    moveq   r2, 1
-    movne   r2, 0
-    str     r2, [r1, 4]                 ; LastPair
-@@noted:
     mov     r0, r4
     pop     {r4, lr}
     ; fall through
@@ -581,6 +535,7 @@ SampleVoiceRender:
 @@render:
     mov     r0, r4
     bl      SAMPLE_RENDER
+    bl      EditorOut                   ; drum editor: this block -> the output ring
     ldr     r0, [r8, 4]                 ; looped sample?
     cmp     r0, 0
     beq     @@done
@@ -641,6 +596,47 @@ SampleVoiceRender:
 @@done:
     pop     {r4-r8, pc}
 
+; r4 = sample voice, just rendered. In the drum editor, if it is the edited drum's voice, copy its
+; block into both channels of the half of the hardware's output ring that the mixer is filling in
+; this block: mixer+0x16 is the half being played (the sound alarm toggles it every block), the
+; mixer renders into the other one. The end stage, rendered after the voices, writes the same half
+; and EditStageRender replaces that with this same block. But for 64 blocks before each preview
+; note the mixer does not render the stage (it clears the stage's delay lines instead) and nothing
+; else writes the ring, so the hardware would loop stale blocks: this copy covers those blocks.
+; Uses r0-r3, r12.
+EditorOut:
+    ldr     r0, =AudioObject
+    ldr     r0, [r0]
+    cmp     r0, 0
+    bxeq    lr
+    ldr     r1, [r0, M_MODE]
+    cmp     r1, MODE_DRUM_EDIT
+    bxne    lr
+    ldr     r1, [r0, M_SESSION]
+    add     r1, r1, 0x45000
+    ldr     r1, [r1, 0xF18]             ; edited drum 0..3
+    add     r1, r0, r1, lsl 2
+    ldr     r1, [r1, M_DRUM_VOICES]     ; its sample voice
+    cmp     r1, r4
+    bxne    lr
+    ldr     r0, [r0, M_MIXER]
+    ldrb    r1, [r0, 0x16]              ; half being played now
+    eor     r1, r1, 1                   ; -> half the mixer fills in this block
+    add     r0, r0, 0x24
+    add     r0, r0, r1, lsl 3
+    ldr     r12, [r0, 4]                ; right buffer
+    ldr     r0, [r0]                    ; left buffer
+    ldr     r2, [r4, 0x1C]
+    ldr     r2, [r2]                    ; the voice's block (source)
+    ldrsh   r1, [r4, 0x10]              ; samples per block
+@@copy:
+    subs    r1, r1, 1
+    bxlt    lr
+    ldrh    r3, [r2], 2
+    strh    r3, [r0], 2
+    strh    r3, [r12], 2
+    b       @@copy
+
 ; r4 = sample voice -> r7 = its envelope state {blocks, fade step, fading, attack step},
 ; r8 = its loop entry.
 ; Both tables are indexed like LoopTable: (slot >> 16) & 3.
@@ -698,10 +694,6 @@ EnvTable:                               ; per slot: blocks since note-on, step, 
     .fill   64, 0
 
 AudioObject:                            ; captured at session load, editor exit and knob changes
-    .word   0
-StageRan:                               ; set by EditStageRender, cleared by the synth hook
-    .word   0
-LastPair:                               ; mixer output pair last written: 0 = +0x24, 1 = +0x2C
     .word   0
 
 ; Queue a note-on (event type 2: note 60 = original pitch, velocity 127) on a sample voice.

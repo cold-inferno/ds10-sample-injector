@@ -16,8 +16,8 @@ const out = DS10.buildRom(src, id.version, samples);
 fs.writeFileSync(path.join(__dirname, "out-eu.nds"), out);
 
 const built = DS10.parseRom(out);
-const ref = DS10.parseRom(load(path.join(root, "milestones", "V1.1 M01 library", "korg-ds10-samples-v1.1.nds")));
-console.log("arm9 == V1.1:", eq(built.arm9, ref.arm9), "| footer:", eq(built.arm9Footer, ref.arm9Footer), "| arm7:", eq(built.arm7, ref.arm7), "| banner:", eq(built.banner, ref.banner));
+const ref = DS10.parseRom(load(process.env.REF_ROM || path.join(root, "milestones", "V1.1 M01 library", "korg-ds10-samples-v1.1.nds")));
+console.log("arm9 == reference ROM:", eq(built.arm9, ref.arm9), "| footer:", eq(built.arm9Footer, ref.arm9Footer), "| arm7:", eq(built.arm7, ref.arm7), "| banner:", eq(built.banner, ref.banner));
 // every file, by path
 function walk(p, dir = 0, prefix = "", acc = {}) {
   const d = p.dirs[dir]; let idx = 0;
