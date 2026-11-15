@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DS-10 Sample Injector</title>
+<style>
+/* Layout: three steps top to bottom; step 2 is the sample list beside the 128-place grid. */
+:root {
+  --bg: #eceef1; --surface: #fafbfc; --fg: #1b1e23; --muted: #5f6773; --line: #d0d5dc;
+  --accent: #2b55c9; --accent-fg: #ffffff; --accent-soft: #dfe6f8; --ok: #2e7d4f; --ok-soft: #e2f1e7;
+  --bad: #b23a1e; --bad-soft: #f8e4de; --lcd: #b9c48c; --lcd-fg: #27301a;
+  --sans: -apple-system, "Segoe UI", system-ui, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #14171c; --surface: #1b1f25; --fg: #e4e7eb; --muted: #99a1ad; --line: #2f353e;
+    --accent: #8aa6ff; --accent-fg: #10131a; --accent-soft: #232c45; --ok: #6fcf97; --ok-soft: #1a2e22;
+    --bad: #f08a6d; --bad-soft: #3a211a; --lcd: #6f7a46; --lcd-fg: #eef3d6; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #14171c; --surface: #1b1f25; --fg: #e4e7eb; --muted: #99a1ad; --line: #2f353e;
+  --accent: #8aa6ff; --accent-fg: #10131a; --accent-soft: #232c45; --ok: #6fcf97; --ok-soft: #1a2e22;
+  --bad: #f08a6d; --bad-soft: #3a211a; --lcd: #6f7a46; --lcd-fg: #eef3d6; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); padding-inline: 16px; padding-block: 24px 64px; }
+main { max-width: 1400px; margin: 0 auto; display: grid; gap: 22px; }
+h1 { margin: 0; font-size: 24px; }
+h2 { margin: 0; font-size: 16px; display: flex; gap: 10px; align-items: baseline; }
+h2 .step { font: 600 12px var(--mono); color: var(--accent); }
+p { margin: 0; max-width: 75ch; }
+.muted { color: var(--muted); }
+section { display: grid; gap: 10px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--fg); }
+.drop strong { color: var(--fg); }
+input[type=file] { display: none; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill { font: 500 12px var(--mono); padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.two { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 16px; align-items: start; }
+@media (max-width: 980px) { .two { grid-template-columns: 1fr; } }
+.list { display: grid; gap: 4px; max-height: 70vh; overflow: auto; }
+.row { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto 4.4rem 1.8rem; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; background: var(--bg); }
+.row .name { overflow-wrap: anywhere; }
+.row .meta { font: 12px var(--mono); color: var(--muted); display: block; }
+.tag { font: 11px var(--mono); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.tag.loop { color: var(--ok); border-color: var(--ok); }
+label.small { font-size: 12px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+button { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; padding: 9px 18px; }
+button.icon { padding: 2px 0; width: 1.8rem; }
+button:focus-visible, input:focus-visible, .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { width: 4.4rem; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--fg); font: 13px var(--mono); }
+.grid { display: grid; gap: 12px; max-height: 76vh; overflow: auto; }
+.grid h3 { margin: 0 0 4px; font-size: 13px; }
+.gridwrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; table-layout: fixed; font-size: 12px; }
+th, td { border: 1px solid var(--line); padding: 3px 4px; vertical-align: top; text-align: left; }
+th { font-weight: 500; color: var(--muted); font-size: 11px; }
+th.row-h { width: 66px; }
+td { height: 44px; }
+td .n { font: 600 11px var(--mono); color: var(--accent); display: flex; justify-content: space-between; gap: 4px; }
+td .n button { padding: 0 4px; font-size: 11px; line-height: 1.3; }
+td.filled { background: var(--ok-soft); }
+td.empty .n { color: var(--muted); }
+td input { width: 100%; border: 0; background: transparent; color: var(--fg); font: 12px var(--sans); padding: 1px 0; }
+.buildbar { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
+.meter { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; }
+.meter .bar { height: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.meter .fill { height: 100%; width: 0; background: var(--accent); }
+.meter.over .fill { background: var(--bad); }
+.lcd { background: var(--lcd); color: var(--lcd-fg); font: 13px var(--mono); padding: 8px 12px; border-radius: 8px; min-height: 2.4em; }
+footer { color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+</style></head>
+<body>
+<main>
+  <header style="display:grid;gap:6px">
+    <h1>DS-10 Sample Injector</h1>
+    <p>Turns your Korg DS-10's four drums into sample players: up to 128 of your own sounds, picked per drum with five knobs in the drum editor, with looping and an attack / hold / fade envelope. Everything happens in this browser; nothing is uploaded.</p>
+  </header>
+
+  <section aria-labelledby="s1">
+    <h2 id="s1"><span class="step">1</span> Your DS-10 ROM</h2>
+    <div class="card">
+      <div class="drop" id="romDrop" tabindex="0" role="button" aria-label="Choose your DS-10 ROM">
+        Drop your <strong>.nds</strong> here, or click to choose it. Supported: DS-10 Europe, USA and Japan.
+      </div>
+      <input type="file" id="romFile" accept=".nds">
+      <div class="status" id="romStatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s2">
+    <h2 id="s2"><span class="step">2</span> Samples</h2>
+    <div class="two">
+      <div class="card">
+        <div class="drop" id="wavDrop" tabindex="0" role="button" aria-label="Add sample files">
+          Drop <strong>WAV</strong> files here (or click). A name starting with a number, like <code>001 kick.wav</code>, goes to that place; others fill the next free place.
+        </div>
+        <input type="file" id="wavFile" accept="audio/*,.wav,.aif,.aiff" multiple>
+        <div class="list" id="list"></div>
+        <p class="muted" style="font-size:12px">Each sound is converted to mono 32,768 Hz and cut to 1 second. Loop points in a WAV's <code>smpl</code> chunk make it loop; a loop that doesn't fit in a second is shortened with a crossfade. <strong>8-bit</strong> halves the size.</p>
+      </div>
+      <div class="card">
+        <div class="status"><strong>Library</strong> <span class="muted" id="libCount">0 of 128 places</span></div>
+        <div class="lcd" id="lcd">On the DS: VCO1 wave picks the group, VCO2 wave the row; balance, VCO2 pitch and sync the column.</div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s3">
+    <h2 id="s3"><span class="step">3</span> Build</h2>
+    <div class="card buildbar">
+      <div class="meter" id="meter"><span class="muted" id="meterText">0 KB of 9,216 KB</span><div class="bar"><div class="fill" id="meterFill"></div></div></div>
+      <button class="primary" id="build" disabled>Build ROM</button>
+      <span class="muted" id="buildStatus">Add a ROM and at least one sample.</span>
+    </div>
+  </section>
+
+  <footer>For your own DS-10 cartridge dump. The patched ROM and a cheat sheet are saved as downloads. Tested on a Nintendo DSi with an R4 flashcart and in melonDS. Not affiliated with Korg or Nintendo.</footer>
+</main>
+
+<script>
+/*__CORE__*/
+const PATCHES = /*__PATCHES__*/;
+</script>
+<script>
+"use strict";
+const RATE = 32768, BUDGET = 9 * 1024 * 1024;
+const WAVES = ["Triangle", "Saw", "Square", "Noise"];
+const VERSION_NAMES = { YJ9P: "DS-10 Europe", YJ9E: "DS-10 USA", YJ9J: "DS-10 Japan" };
+let rom = null, version = null, romName = "";
+const samples = [];                 // {id, name, file, pcm, loop, eightBit, noLoop, place, seconds}
+let nextId = 1;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------- ROM ----------
+function setupDrop(drop, input, onFiles) {
+  drop.onclick = () => input.click();
+  drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } };
+  input.onchange = () => { onFiles([...input.files]); input.value = ""; };
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); onFiles([...e.dataTransfer.files]); };
+}
+setupDrop($("romDrop"), $("romFile"), async files => {
+  const f = files[0]; if (!f) return;
+  const st = $("romStatus");
+  try {
+    const p = DS10.parseRom(new Uint8Array(await f.arrayBuffer()));
+    const id = DS10.identify(p, PATCHES);
+    if (!id.ok) { rom = version = null; st.innerHTML = `<span class="pill bad">${esc(id.reason)}</span>`; }
+    else {
+      rom = p; version = id.version; romName = f.name.replace(/\.nds$/i, "");
+      st.innerHTML = `<span class="pill ok">${esc(VERSION_NAMES[p.code] || p.code)} (${p.code}) recognised</span><span class="muted">${esc(f.name)}</span>`;
+    }
+  } catch (e) { rom = version = null; st.innerHTML = `<span class="pill bad">Couldn't read this file as a DS ROM.</span>`; }
+  refresh();
+});
+
+// ---------- samples ----------
+// 16-bit PCM WAV at 32768 Hz: read the samples straight from the file (bit-exact in every browser).
+function rawWav(bytes) {
+  const str = (o, n) => String.fromCharCode(...bytes.subarray(o, o + n));
+  if (str(0, 4) !== "RIFF" || str(8, 4) !== "WAVE") return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let fmt = null, i = 12;
+  while (i + 8 <= bytes.length) {
+    const id = str(i, 4), size = dv.getUint32(i + 4, true), body = i + 8;
+    if (id === "fmt ") fmt = { tag: dv.getUint16(body, true), ch: dv.getUint16(body + 2, true), rate: dv.getUint32(body + 4, true), bits: dv.getUint16(body + 14, true) };
+    else if (id === "data") {
+      if (!fmt || fmt.tag !== 1 || fmt.bits !== 16 || fmt.rate !== RATE) return null;
+      const frames = Math.floor(Math.min(size, bytes.length - body) / (2 * fmt.ch)), pcm = new Int16Array(frames);
+      for (let f = 0; f < frames; f++) {
+        let s = 0; for (let c = 0; c < fmt.ch; c++) s += dv.getInt16(body + (f * fmt.ch + c) * 2, true);
+        pcm[f] = Math.round(s / fmt.ch);
+      }
+      return pcm;
+    }
+    i = body + size + (size & 1);
+  }
+  return null;
+}
+async function decode(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let pcm = rawWav(bytes);
+  if (!pcm) {                                                   // anything else: the browser decodes
+    const ctx = new OfflineAudioContext(1, 1, RATE);            // and resamples to RATE
+    const buf = await ctx.decodeAudioData(bytes.slice().buffer);
+    const n = buf.length, ch = buf.numberOfChannels;
+    const data = [...Array(ch)].map((_, c) => buf.getChannelData(c));
+    pcm = new Int16Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0; for (let c = 0; c < ch; c++) s += data[c][i];
+      s /= ch;                                                  // decoders scale +/- by 32767/32768
+      pcm[i] = Math.max(-32768, Math.min(32767, Math.round(s * (s >= 0 ? 32767 : 32768))));
+    }
+  }
+  let loop = null;
+  const wl = DS10.wavLoop(bytes);
+  if (wl) loop = { start: Math.round(wl.start * RATE / wl.rate), end: Math.round(wl.end * RATE / wl.rate) };
+  return { pcm, loop };
+}
+function freePlace(from = 1) { for (let n = from; n <= 128; n++) if (!samples.some(s => s.place === n)) return n; return null; }
+setupDrop($("wavDrop"), $("wavFile"), async files => {
+  $("buildStatus").textContent = `Reading ${files.length} file${files.length === 1 ? "" : "s"}…`;
+  for (const f of files) {
+    try {
+      const { pcm, loop } = await decode(f);
+      const m = f.name.match(/^(\d{1,3})\s*[-_. ]?\s*(.*?)\.[^.]+$/);
+      const base = f.name.replace(/\.[^.]+$/, "");
+      let place = m && +m[1] >= 1 && +m[1] <= 128 && !samples.some(s => s.place === +m[1]) ? +m[1] : freePlace();
+      samples.push({ id: nextId++, name: (m && m[2]) || base, file: f.name, pcm, loop, eightBit: /\.8bit/i.test(f.name),
+                     noLoop: /\.noloop/i.test(f.name), place, seconds: pcm.length / RATE });
+    } catch (e) {
+      samples.push({ id: nextId++, name: f.name, file: f.name, error: "Not an audio file this browser can read." });
+    }
+  }
+  refresh();
+});
+
+function encoded(s) {                            // the .pcm file for this sample, cached
+  const key = `${s.eightBit}|${s.noLoop}`;
+  if (s._key === key) return s._enc;
+  let pcm = s.pcm, loopStart = null; s.shortened = false;
+  if (s.loop && !s.noLoop) {
+    const r = DS10.fitLoop(pcm, s.loop.start, s.loop.end);
+    pcm = r.pcm; loopStart = r.loopStart; s.shortened = r.shortened;
+  }
+  s._enc = DS10.encodeSample(pcm, s.eightBit, loopStart); s._key = key;
+  s.looped = s._enc[1] === 1;
+  return s._enc;
+}
+
+let audio = null, playing = null;
+function play(s, btn) {
+  audio = audio || new AudioContext();
+  if (playing) { try { playing.src.stop(); } catch (e) {} playing.btn.textContent = "▶"; if (playing.btn === btn) { playing = null; return; } }
+  const enc = encoded(s), eight = enc[0] === 1, n = eight ? enc.length - 4 : (enc.length - 4) / 2;
+  const buf = audio.createBuffer(1, n, RATE), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = eight ? ((enc[4 + i] << 24 >> 24) / 128) : (((enc[4 + 2 * i] | enc[5 + 2 * i] << 8) << 16 >> 16) / 32768);
+  const src = audio.createBufferSource(); src.buffer = buf;
+  if (enc[1]) { src.loop = true; src.loopStart = (enc[2] | enc[3] << 8) / RATE; src.loopEnd = n / RATE; }
+  src.connect(audio.destination); src.start();
+  btn.textContent = "■"; playing = { src, btn };
+  src.onended = () => { if (playing && playing.src === src) { btn.textContent = "▶"; playing = null; } };
+  if (enc[1]) setTimeout(() => { if (playing && playing.src === src) { src.stop(); } }, 3000);
+}
+
+function renderList() {
+  const list = $("list"); list.innerHTML = "";
+  samples.forEach(s => {
+    const row = document.createElement("div"); row.className = "row";
+    if (s.error) { row.innerHTML = `<span></span><span class="name">${esc(s.name)}<span class="meta">${esc(s.error)}</span></span><span></span><span></span><span></span>`; }
+    else {
+      encoded(s);
+      row.innerHTML = `<button class="icon" title="Play">▶</button>
+        <span class="name">${esc(s.name)}<span class="meta">${s.seconds.toFixed(2)} s${s.seconds > 1 && !s.looped ? " · cut to 1 s" : ""}</span></span>
+        <span>${s.loop ? `<label class="small"><input type="checkbox" data-k="noLoop" ${s.noLoop ? "" : "checked"}> <span class="tag${s.looped ? " loop" : ""}">${s.looped && s.shortened ? "loop (shortened)" : "loop"}</span></label>` : ""}</span>
+        <label class="small"><input type="checkbox" data-k="eightBit" ${s.eightBit ? "checked" : ""}> 8-bit</label>
+        <input class="num" type="number" min="1" max="128" placeholder="#" value="${s.place || ""}" aria-label="Place for ${esc(s.name)}">`;
+      row.querySelector("button").onclick = e => play(s, e.target);
+      row.querySelectorAll("input[type=checkbox]").forEach(cb => cb.onchange = () => {
+        if (cb.dataset.k === "noLoop") s.noLoop = !cb.checked; else s.eightBit = cb.checked; refresh();
+      });
+      row.querySelector(".num").onchange = e => {
+        const n = parseInt(e.target.value, 10);
+        samples.forEach(o => { if (o !== s && o.place === n) o.place = null; });
+        s.place = n >= 1 && n <= 128 ? n : null; refresh();
+      };
+    }
+    const del = document.createElement("button"); del.className = "icon"; del.textContent = "×"; del.title = "Remove";
+    del.onclick = () => { samples.splice(samples.indexOf(s), 1); refresh(); };
+    row.append(del); list.append(row);
+  });
+}
+
+function renderGrid() {
+  const cols = []; for (let s = 0; s < 2; s++) for (let p = 0; p < 2; p++) for (let b = 0; b < 2; b++) cols.push([s, p, b]);
+  const head = cols.map(([s, p, b]) => `<th>bal ${b ? "→" : "←"}<br>pitch ${p ? "→" : "←"}<br>sync ${s ? "on" : "off"}</th>`).join("");
+  let html = "";
+  for (let v1 = 0; v1 < 4; v1++) {
+    html += `<div><h3>VCO1 ${WAVES[v1]} · ${String(v1 * 32 + 1).padStart(3, "0")}–${String(v1 * 32 + 32).padStart(3, "0")}</h3><div class="gridwrap"><table><thead><tr><th class="row-h"></th>${head}</tr></thead><tbody>`;
+    for (let v2 = 0; v2 < 4; v2++) {
+      html += `<tr><th class="row-h">VCO2 ${WAVES[v2]}</th>`;
+      cols.forEach(([s, p, b]) => {
+        const n = v1 * 32 + v2 * 8 + s * 4 + p * 2 + b + 1, sm = samples.find(x => x.place === n && !x.error);
+        html += sm ? `<td class="filled"><div class="n">${String(n).padStart(3, "0")}<span><button data-play="${sm.id}" title="Play">▶</button><button data-clear="${sm.id}" title="Remove from this place">×</button></span></div><input data-name="${sm.id}" value="${esc(sm.name)}" aria-label="Name for place ${n}"></td>`
+                   : `<td class="empty" data-n="${n}"><div class="n">${String(n).padStart(3, "0")}</div></td>`;
+      });
+      html += "</tr>";
+    }
+    html += "</tbody></table></div></div>";
+  }
+  const g = $("grid"); g.innerHTML = html;
+  const byId = id => samples.find(s => s.id === +id);
+  g.querySelectorAll("[data-play]").forEach(b => b.onclick = () => play(byId(b.dataset.play), b));
+  g.querySelectorAll("[data-clear]").forEach(b => b.onclick = () => { byId(b.dataset.clear).place = null; refresh(); });
+  g.querySelectorAll("[data-name]").forEach(i => i.onchange = () => { byId(i.dataset.name).name = i.value.trim() || "sample"; renderList(); });
+  g.querySelectorAll("td").forEach(td => td.onmouseenter = () => {
+    const n = td.dataset.n || td.querySelector(".n").textContent.slice(0, 3), c = DS10.controls(+n);
+    $("lcd").textContent = `${String(+n).padStart(3, "0")}: VCO1 ${WAVES[c.vco1]} · VCO2 ${WAVES[c.vco2]} · balance ${c.bal ? "right" : "left"} · VCO2 pitch ${c.pitch ? "centre/right" : "left"} · sync ${c.sync ? "on" : "off"}`;
+  });
+}
+
+function refresh() {
+  renderList(); renderGrid();
+  const placed = samples.filter(s => s.place && !s.error);
+  const bytes = placed.reduce((t, s) => t + encoded(s).length, 0);
+  $("libCount").textContent = `${placed.length} of 128 places · ${placed.filter(s => s.looped).length} looped`;
+  $("meterText").textContent = `${Math.round(bytes / 1024).toLocaleString()} KB of 9,216 KB`;
+  $("meterFill").style.width = Math.min(100, bytes / BUDGET * 100) + "%";
+  $("meter").classList.toggle("over", bytes > BUDGET);
+  const ready = rom && placed.length && bytes <= BUDGET;
+  $("build").disabled = !ready;
+  $("buildStatus").textContent = !rom ? "Add your DS-10 ROM." : !placed.length ? "Add at least one sample." :
+    bytes > BUDGET ? "Too big: remove samples or tick 8-bit on some." : "Ready.";
+}
+
+// ---------- build ----------
+function download(name, data, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function cheatSheet(placed) {
+  const cols = []; for (let s = 0; s < 2; s++) for (let p = 0; p < 2; p++) for (let b = 0; b < 2; b++) cols.push([s, p, b]);
+  const head = cols.map(([s, p, b]) => `<th>bal ${b ? "→" : "←"}<br>pitch ${p ? "→" : "←"}<br>sync ${s ? "on" : "off"}</th>`).join("");
+  let body = "";
+  for (let v1 = 0; v1 < 4; v1++) {
+    body += `<h2>VCO1 ${WAVES[v1]} <small>${String(v1 * 32 + 1).padStart(3, "0")}–${String(v1 * 32 + 32).padStart(3, "0")}</small></h2><table><tr><th></th>${head}</tr>`;
+    for (let v2 = 0; v2 < 4; v2++) {
+      body += `<tr><th>VCO2 ${WAVES[v2]}</th>`;
+      cols.forEach(([s, p, b]) => {
+        const n = v1 * 32 + v2 * 8 + s * 4 + p * 2 + b + 1, sm = placed.find(x => x.place === n);
+        body += sm ? `<td><b>${String(n).padStart(3, "0")}</b>${esc(sm.name)}${sm.looped ? " <i>loop</i>" : ""}${sm.eightBit ? " <i>8-bit</i>" : ""}</td>` : `<td class="e"><b>${String(n).padStart(3, "0")}</b>—</td>`;
+      });
+      body += "</tr>";
+    }
+    body += "</table>";
+  }
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DS-10 Sample Cheat Sheet</title><style>
+:root{--bg:#fff;--fg:#1b1e23;--muted:#666;--line:#ccc;--e:#f3f3f3;--a:#2b55c9}
+@media (prefers-color-scheme:dark){:root{--bg:#15181d;--fg:#e4e7eb;--muted:#999;--line:#333;--e:#1c1f24;--a:#8aa6ff;color-scheme:dark}}
+body{margin:0;padding:20px 16px;background:var(--bg);color:var(--fg);font:13px/1.4 -apple-system,system-ui,sans-serif}
+h1{font-size:20px;margin:0 0 4px}p{color:var(--muted);margin:0 0 16px;max-width:80ch}h2{font-size:15px;margin:18px 0 6px}h2 small{color:var(--muted);font-weight:400}
+table{border-collapse:collapse;width:100%;table-layout:fixed}th,td{border:1px solid var(--line);padding:4px;vertical-align:top;text-align:left;overflow-wrap:anywhere}
+th{font-weight:500;color:var(--muted);font-size:11px}td b{display:block;color:var(--a);font:600 11px ui-monospace,monospace}td.e{background:var(--e);color:var(--muted)}i{color:var(--muted);font-size:11px}
+@media print{body{padding:0}h2{break-after:avoid}table{break-inside:avoid}}
+</style></head><body><h1>DS-10 Sample Cheat Sheet</h1><p>${placed.length} samples. In the drum editor: VCO1 wave picks the group, VCO2 wave the row; balance (from the middle up = →), VCO2 pitch (centre = →) and sync the column. Looped samples: EG ATT = fade-in, EG SUS = hold (127 = forever), EG DEC = fade-out.</p>${body}</body></html>`;
+}
+$("build").onclick = async () => {
+  const btn = $("build"); btn.disabled = true; $("buildStatus").textContent = "Building…";
+  await new Promise(r => setTimeout(r, 30));
+  try {
+    const placed = samples.filter(s => s.place && !s.error);
+    const files = {}; placed.forEach(s => files[s.place] = encoded(s));
+    const out = DS10.buildRom(rom, version, files);
+    download(`${romName} - samples.nds`, out, "application/octet-stream");
+    download(`${romName} - samples cheat sheet.html`, cheatSheet(placed), "text/html");
+    $("buildStatus").textContent = `Done: ${(out.length / 1048576).toFixed(1)} MB ROM and a cheat sheet saved to your downloads.`;
+  } catch (e) {
+    $("buildStatus").textContent = "Build failed: " + e.message;
+  }
+  btn.disabled = false;
+};
+refresh();
+</script>
+</body></html>

@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DS-10 Sample Injector</title>
+<style>
+/* Layout: three steps top to bottom; step 2 is the sample list beside the 128-place grid. */
+:root {
+  --bg: #eceef1; --surface: #fafbfc; --fg: #1b1e23; --muted: #5f6773; --line: #d0d5dc;
+  --accent: #2b55c9; --accent-fg: #ffffff; --accent-soft: #dfe6f8; --ok: #2e7d4f; --ok-soft: #e2f1e7;
+  --bad: #b23a1e; --bad-soft: #f8e4de; --lcd: #b9c48c; --lcd-fg: #27301a;
+  --sans: -apple-system, "Segoe UI", system-ui, sans-serif; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #14171c; --surface: #1b1f25; --fg: #e4e7eb; --muted: #99a1ad; --line: #2f353e;
+    --accent: #8aa6ff; --accent-fg: #10131a; --accent-soft: #232c45; --ok: #6fcf97; --ok-soft: #1a2e22;
+    --bad: #f08a6d; --bad-soft: #3a211a; --lcd: #6f7a46; --lcd-fg: #eef3d6; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #14171c; --surface: #1b1f25; --fg: #e4e7eb; --muted: #99a1ad; --line: #2f353e;
+  --accent: #8aa6ff; --accent-fg: #10131a; --accent-soft: #232c45; --ok: #6fcf97; --ok-soft: #1a2e22;
+  --bad: #f08a6d; --bad-soft: #3a211a; --lcd: #6f7a46; --lcd-fg: #eef3d6; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); padding-inline: 16px; padding-block: 24px 64px; }
+main { max-width: 1400px; margin: 0 auto; display: grid; gap: 22px; }
+h1 { margin: 0; font-size: 24px; }
+h2 { margin: 0; font-size: 16px; display: flex; gap: 10px; align-items: baseline; }
+h2 .step { font: 600 12px var(--mono); color: var(--accent); }
+p { margin: 0; max-width: 75ch; }
+.muted { color: var(--muted); }
+section { display: grid; gap: 10px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--fg); }
+.drop strong { color: var(--fg); }
+input[type=file] { display: none; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill { font: 500 12px var(--mono); padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.two { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 16px; align-items: start; }
+@media (max-width: 980px) { .two { grid-template-columns: 1fr; } }
+.list { display: grid; gap: 4px; max-height: 70vh; overflow: auto; }
+.row { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto auto 4.4rem 1.8rem; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; background: var(--bg); }
+.row .name { overflow-wrap: anywhere; }
+.row .meta { font: 12px var(--mono); color: var(--muted); display: block; }
+.tag { font: 11px var(--mono); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.tag.loop { color: var(--ok); border-color: var(--ok); }
+label.small { font-size: 12px; color: var(--muted); display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+button { font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; padding: 9px 18px; }
+button.icon { padding: 2px 0; width: 1.8rem; }
+button:focus-visible, input:focus-visible, .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { width: 4.4rem; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--fg); font: 13px var(--mono); }
+.grid { display: grid; gap: 12px; max-height: 76vh; overflow: auto; }
+.grid h3 { margin: 0 0 4px; font-size: 13px; }
+.gridwrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; table-layout: fixed; font-size: 12px; }
+th, td { border: 1px solid var(--line); padding: 3px 4px; vertical-align: top; text-align: left; }
+th { font-weight: 500; color: var(--muted); font-size: 11px; }
+th.row-h { width: 66px; }
+td { height: 44px; }
+td .n { font: 600 11px var(--mono); color: var(--accent); display: flex; justify-content: space-between; gap: 4px; }
+td .n button { padding: 0 4px; font-size: 11px; line-height: 1.3; }
+td.filled { background: var(--ok-soft); }
+td.empty .n { color: var(--muted); }
+td input { width: 100%; border: 0; background: transparent; color: var(--fg); font: 12px var(--sans); padding: 1px 0; }
+.buildbar { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; }
+.meter { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; }
+.meter .bar { height: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.meter .fill { height: 100%; width: 0; background: var(--accent); }
+.meter.over .fill { background: var(--bad); }
+.lcd { background: var(--lcd); color: var(--lcd-fg); font: 13px var(--mono); padding: 8px 12px; border-radius: 8px; min-height: 2.4em; }
+footer { color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+</style></head>
+<body>
+<main>
+  <header style="display:grid;gap:6px">
+    <h1>DS-10 Sample Injector</h1>
+    <p>Turns your Korg DS-10's four drums into sample players: up to 128 of your own sounds, picked per drum with five knobs in the drum editor, with looping and an attack / hold / fade envelope. Everything happens in this browser; nothing is uploaded.</p>
+  </header>
+
+  <section aria-labelledby="s1">
+    <h2 id="s1"><span class="step">1</span> Your DS-10 ROM</h2>
+    <div class="card">
+      <div class="drop" id="romDrop" tabindex="0" role="button" aria-label="Choose your DS-10 ROM">
+        Drop your <strong>.nds</strong> here, or click to choose it. Supported: DS-10 Europe, USA and Japan.
+      </div>
+      <input type="file" id="romFile" accept=".nds">
+      <div class="status" id="romStatus"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s2">
+    <h2 id="s2"><span class="step">2</span> Samples</h2>
+    <div class="two">
+      <div class="card">
+        <div class="drop" id="wavDrop" tabindex="0" role="button" aria-label="Add sample files">
+          Drop <strong>WAV</strong> files here (or click). A name starting with a number, like <code>001 kick.wav</code>, goes to that place; others fill the next free place.
+        </div>
+        <input type="file" id="wavFile" accept="audio/*,.wav,.aif,.aiff" multiple>
+        <div class="list" id="list"></div>
+        <p class="muted" style="font-size:12px">Each sound is converted to mono 32,768 Hz and cut to 1 second. Loop points in a WAV's <code>smpl</code> chunk make it loop; a loop that doesn't fit in a second is shortened with a crossfade. <strong>8-bit</strong> halves the size.</p>
+      </div>
+      <div class="card">
+        <div class="status"><strong>Library</strong> <span class="muted" id="libCount">0 of 128 places</span></div>
+        <div class="lcd" id="lcd">On the DS: VCO1 wave picks the group, VCO2 wave the row; balance, VCO2 pitch and sync the column.</div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="s3">
+    <h2 id="s3"><span class="step">3</span> Build</h2>
+    <div class="card buildbar">
+      <div class="meter" id="meter"><span class="muted" id="meterText">0 KB of 9,216 KB</span><div class="bar"><div class="fill" id="meterFill"></div></div></div>
+      <button class="primary" id="build" disabled>Build ROM</button>
+      <span class="muted" id="buildStatus">Add a ROM and at least one sample.</span>
+    </div>
+  </section>
+
+  <footer>For your own DS-10 cartridge dump. The patched ROM and a cheat sheet are saved as downloads. Tested on a Nintendo DSi with an R4 flashcart and in melonDS. Not affiliated with Korg or Nintendo.</footer>
+</main>
+
+<script>
+// DS-10 sample injector: ROM patching core. No DOM; runs in the browser and in Node (for tests).
+// Ports of rom-patch/build_lib.py (sample encoding, loop fitting, INIT kit) and of the ndstool
+// steps we need, except that the ROM is laid out again here while keeping every original header
+// field (ndstool rewrote the ROM-control words, which some flashcarts refuse).
+const DS10 = (() => {
+  "use strict";
+
+  const RAM = 0x02000000;
+  const SLOT_SAMPLES = 32768;              // one drum slot: 1 s at 32768 Hz
+  const ALIGN = 0x200;
+  const MODPARAMS_MAGIC = [0x21, 0x06, 0xC0, 0xDE];   // 0xDEC00621 little-endian
+  const INIT_DRUM_PATCHES = 0x2B3C;        // in ds10init.dat; 31 bytes per drum
+
+  // ---------- checksums ----------
+  const CRC32_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) c = CRC32_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function crc16(bytes) {                  // NDS header CRC (CRC-16/MODBUS)
+    let c = 0xFFFF;
+    for (let i = 0; i < bytes.length; i++) {
+      c ^= bytes[i];
+      for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xA001 : c >>> 1;
+    }
+    return c;
+  }
+  function md5(bytes) {                    // RFC 1321; used for the session checksum in ds10init.dat
+    const K = new Uint32Array(64), S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+    for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32) >>> 0;
+    const n = bytes.length, total = ((n + 8) >> 6) + 1 << 6;
+    const m = new Uint8Array(total);
+    m.set(bytes); m[n] = 0x80;
+    const dv = new DataView(m.buffer);
+    dv.setUint32(total - 8, (n * 8) >>> 0, true);
+    dv.setUint32(total - 4, Math.floor(n / 0x20000000), true);
+    let a0 = 0x67452301, b0 = 0xEFCDAB89, c0 = 0x98BADCFE, d0 = 0x10325476;
+    for (let off = 0; off < total; off += 64) {
+      let a = a0, b = b0, c = c0, d = d0;
+      for (let i = 0; i < 64; i++) {
+        let f, g;
+        if (i < 16) { f = (b & c) | (~b & d); g = i; }
+        else if (i < 32) { f = (d & b) | (~d & c); g = (5 * i + 1) % 16; }
+        else if (i < 48) { f = b ^ c ^ d; g = (3 * i + 5) % 16; }
+        else { f = c ^ (b | ~d); g = (7 * i) % 16; }
+        const s = S[(i >> 4) * 4 + (i & 3)];
+        const x = (a + f + K[i] + dv.getUint32(off + g * 4, true)) >>> 0;
+        a = d; d = c; c = b;
+        b = (b + ((x << s) | (x >>> (32 - s)))) >>> 0;
+      }
+      a0 = (a0 + a) >>> 0; b0 = (b0 + b) >>> 0; c0 = (c0 + c) >>> 0; d0 = (d0 + d) >>> 0;
+    }
+    const out = new Uint8Array(16), ov = new DataView(out.buffer);
+    [a0, b0, c0, d0].forEach((w, i) => ov.setUint32(i * 4, w, true));
+    return out;
+  }
+
+  // ---------- ROM structure ----------
+  const u32 = (b, o) => (b[o] | b[o + 1] << 8 | b[o + 2] << 16 | b[o + 3] << 24) >>> 0;
+  const u16 = (b, o) => b[o] | b[o + 1] << 8;
+  const put32 = (b, o, v) => { b[o] = v & 255; b[o + 1] = v >>> 8 & 255; b[o + 2] = v >>> 16 & 255; b[o + 3] = v >>> 24 & 255; };
+  const put16 = (b, o, v) => { b[o] = v & 255; b[o + 1] = v >>> 8 & 255; };
+  const alignUp = (n, a = ALIGN) => Math.ceil(n / a) * a;
+  const ascii = (b, o, n) => String.fromCharCode(...b.subarray(o, o + n)).replace(/\0+$/, "");
+
+  function bannerSize(rom, off) {
+    if (!off) return 0;
+    return { 1: 0x840, 2: 0x940, 3: 0xA40, 0x103: 0x23C0 }[u16(rom, off)] || 0x840;
+  }
+
+  function parseFnt(fnt) {
+    const ndirs = u16(fnt, 6);
+    const dirs = [];
+    for (let i = 0; i < ndirs; i++) {
+      const sub = u32(fnt, i * 8), first = u16(fnt, i * 8 + 4), parent = u16(fnt, i * 8 + 6);
+      const entries = [];
+      let p = sub;
+      for (;;) {
+        const t = fnt[p++];
+        if (!t) break;
+        const len = t & 0x7F;
+        const name = ascii(fnt, p, len); p += len;
+        if (t & 0x80) { entries.push({ dir: true, name, id: u16(fnt, p) }); p += 2; }
+        else entries.push({ dir: false, name });
+      }
+      dirs.push({ first, parent: i ? parent : 0xF000, entries });
+    }
+    return dirs;
+  }
+
+  function buildFnt(dirs) {
+    const tables = dirs.map(d => {
+      const out = [];
+      for (const e of d.entries) {
+        const nameBytes = [...e.name].map(ch => ch.charCodeAt(0));
+        out.push((e.dir ? 0x80 : 0) | nameBytes.length, ...nameBytes);
+        if (e.dir) out.push(e.id & 255, e.id >>> 8);
+      }
+      out.push(0);
+      return out;
+    });
+    const main = dirs.length * 8;
+    const size = main + tables.reduce((s, t) => s + t.length, 0);
+    const fnt = new Uint8Array(size);
+    let p = main;
+    dirs.forEach((d, i) => {
+      put32(fnt, i * 8, p);
+      put16(fnt, i * 8 + 4, d.first);
+      put16(fnt, i * 8 + 6, i ? d.parent : dirs.length);
+      fnt.set(tables[i], p);
+      p += tables[i].length;
+    });
+    return fnt;
+  }
+
+  function parseRom(rom) {
+    const h = off => u32(rom, off);
+    const code = ascii(rom, 12, 4);
+    const arm9 = rom.subarray(h(0x20), h(0x20) + h(0x2C));
+    const footerAt = h(0x20) + h(0x2C);
+    const hasFooter = u32(rom, footerAt) === 0xDEC00621;
+    const fnt = rom.subarray(h(0x40), h(0x40) + h(0x44));
+    const fatOff = h(0x48), nfiles = h(0x4C) / 8;
+    const files = [];
+    for (let i = 0; i < nfiles; i++) files.push(rom.subarray(h(fatOff + i * 8), h(fatOff + i * 8 + 4)));
+    return {
+      rom, code, title: ascii(rom, 0, 12), headerSize: h(0x84),
+      arm9, arm9Footer: hasFooter ? rom.subarray(footerAt, footerAt + 12) : new Uint8Array(0),
+      arm9Ram: h(0x28),
+      arm9Ovt: rom.subarray(h(0x50), h(0x50) + h(0x54)),
+      arm7: rom.subarray(h(0x30), h(0x30) + h(0x3C)),
+      arm7Ovt: rom.subarray(h(0x58), h(0x58) + h(0x5C)),
+      banner: rom.subarray(h(0x68), h(0x68) + bannerSize(rom, h(0x68))),
+      dirs: parseFnt(fnt), files,
+    };
+  }
+
+  function findFile(p, path) {                    // "data/demo/ds10init.dat" -> file id
+    const parts = path.split("/");
+    let dir = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const d = p.dirs[dir];
+      let fileIdx = 0;
+      let found = null;
+      for (const e of d.entries) {
+        if (e.name === parts[i]) { found = e; break; }
+        if (!e.dir) fileIdx++;
+      }
+      if (!found) return -1;
+      if (i === parts.length - 1) return found.dir ? -1 : d.first + fileIdx;
+      if (!found.dir) return -1;
+      dir = found.id & 0x0FFF;
+    }
+    return -1;
+  }
+
+  // ---------- patch ----------
+  function identify(p, patches) {
+    const v = patches[p.code];
+    if (!v) return { ok: false, reason: `This isn't a supported DS-10 ROM (game code ${p.code || "?"}).` };
+    if (p.arm9.length !== v.arm9Size || crc32(p.arm9) !== v.arm9Crc32)
+      return { ok: false, reason: `This ${p.code} ROM's game code doesn't match the known DS-10 ${p.code}. Is it modified or already patched?` };
+    return { ok: true, version: v };
+  }
+
+  function growItcm(arm9WithFooter, v) {          // must match grow_itcm() in build_patches.py
+    const a = arm9WithFooter;
+    let mp = -1;
+    for (let i = 0; i + 8 <= a.length; i += 4)
+      if (a[i] === MODPARAMS_MAGIC[0] && a[i + 1] === MODPARAMS_MAGIC[1] && a[i + 2] === MODPARAMS_MAGIC[2] &&
+          a[i + 3] === MODPARAMS_MAGIC[3] && u32(a, i + 4) === 0x2106C0DE) { mp = i - 28; break; }
+    if (mp < 0) throw new Error("module params not found");
+    const listStart = u32(a, mp), listEnd = u32(a, mp + 4), autoStart = u32(a, mp + 8);
+    if (autoStart !== v.itcmSrc || u32(a, listStart - RAM + 4) !== v.itcmOldSize) throw new Error("unexpected ITCM layout");
+    const cut = autoStart + v.itcmOldSize - RAM;
+    const out = new Uint8Array(a.length + v.itcmGrow);
+    out.set(a.subarray(0, cut));
+    out.set(a.subarray(cut), cut + v.itcmGrow);
+    put32(out, mp, listStart + v.itcmGrow);
+    put32(out, mp + 4, listEnd + v.itcmGrow);
+    put32(out, listStart + v.itcmGrow - RAM + 4, v.itcmOldSize + v.itcmGrow);
+    return out;
+  }
+
+  function patchArm9(p, v) {
+    const a = new Uint8Array(p.arm9.length + p.arm9Footer.length);
+    a.set(p.arm9); a.set(p.arm9Footer, p.arm9.length);
+    const grown = growItcm(a, v);
+    for (const [off, hex] of v.edits)
+      for (let i = 0; i < hex.length / 2; i++) grown[off + i] = parseInt(hex.substr(i * 2, 2), 16);
+    return { arm9: grown.subarray(0, grown.length - p.arm9Footer.length), footer: grown.subarray(grown.length - p.arm9Footer.length) };
+  }
+
+  // ---------- samples ----------
+  // pcm: Int16Array at 32768 Hz. Returns {pcm, loopStart, shortened} like fit_loop() in build_lib.py.
+  function fitLoop(pcm, start, end) {
+    end = Math.min(end, pcm.length);
+    const length = end - start;
+    if (length < 2) return { pcm: pcm.subarray(0, SLOT_SAMPLES), loopStart: null, shortened: false };
+    if (end <= SLOT_SAMPLES) return { pcm: pcm.subarray(0, end), loopStart: start, shortened: false };
+    if (length <= SLOT_SAMPLES / 2) {
+      const head = SLOT_SAMPLES - length, out = new Int16Array(SLOT_SAMPLES);
+      out.set(pcm.subarray(0, head)); out.set(pcm.subarray(start, end), head);
+      return { pcm: out, loopStart: head, shortened: false };
+    }
+    const b = SLOT_SAMPLES, a = b - start >= SLOT_SAMPLES / 4 ? start : b / 2;
+    const x = Math.min(4096, Math.floor((b - a) / 2), a);
+    const out = Int16Array.from(pcm.subarray(0, b));
+    for (let i = 0; i < x; i++) {
+      const t = (i + 1) / (x + 1);
+      out[b - x + i] = Math.trunc(pcm[b - x + i] * (1 - t) + pcm[a - x + i] * t);
+    }
+    return { pcm: out, loopStart: a, shortened: true };
+  }
+
+  // {rate, start, end (exclusive)} from a WAV's first 'smpl' loop, or null. Port of wav_loop().
+  function wavLoop(bytes) {
+    if (ascii(bytes, 0, 4) !== "RIFF" || ascii(bytes, 8, 4) !== "WAVE") return null;
+    let rate = 0, loop = null, i = 12;
+    while (i + 8 <= bytes.length) {
+      const id = ascii(bytes, i, 4), size = u32(bytes, i + 4), body = i + 8;
+      if (id === "fmt ") rate = u32(bytes, body + 4);
+      else if (id === "smpl" && size >= 60 && u32(bytes, body + 28) > 0)
+        loop = [u32(bytes, body + 44), u32(bytes, body + 48) + 1];     // smpl loop end is inclusive
+      i = body + size + (size & 1);
+    }
+    return rate && loop && loop[1] > loop[0] ? { rate, start: loop[0], end: loop[1] } : null;
+  }
+
+  // The .pcm file: 4-byte header {format, loop flag, u16 loop start}, then the data.
+  function encodeSample(pcm, eightBit, loopStart) {
+    pcm = pcm.subarray(0, SLOT_SAMPLES);
+    const step = eightBit ? 4 : 2;
+    if (loopStart !== null && loopStart !== undefined) {
+      const trim = pcm.length % step;
+      if (loopStart >= trim) { pcm = pcm.subarray(trim); loopStart -= trim; }
+      else if (pcm.length - trim - loopStart >= 2) pcm = pcm.subarray(0, pcm.length - trim);
+      else loopStart = null;
+    } else loopStart = null;
+    const bytes = eightBit ? pcm.length : pcm.length * 2;
+    const out = new Uint8Array(4 + alignUp(bytes, 4));
+    out[0] = eightBit ? 1 : 0;
+    out[1] = loopStart !== null ? 1 : 0;
+    put16(out, 2, loopStart !== null ? loopStart : 0);
+    if (eightBit) for (let i = 0; i < pcm.length; i++) out[4 + i] = Math.max(-128, Math.min(127, (pcm[i] + 128) >> 8)) & 255;
+    else for (let i = 0; i < pcm.length; i++) put16(out, 4 + i * 2, pcm[i] & 0xFFFF);
+    return out;
+  }
+
+  function setInitKit(dat) {                      // drum n plays sample 1, 33, 65, 97
+    const d = Uint8Array.from(dat);
+    const sum = md5(d.subarray(0x10));            // unknown layout? leave the file alone
+    if (d.length < INIT_DRUM_PATCHES + 4 * 31 || !sum.every((x, i) => x === d[i])) return dat;
+    for (let n = 0; n < 4; n++) {
+      const p = INIT_DRUM_PATCHES + 31 * n;
+      d[p + 6] = n; d[p + 7] = 0; d[p + 8] = 0xC1; d[p + 9] = 0; d[p + 10] = 0;
+    }
+    d.set(md5(d.subarray(0x10)), 0);
+    return d;
+  }
+
+  // ---------- rebuild ----------
+  // samples: {number (1-128): Uint8Array .pcm file}. Returns the patched ROM as a Uint8Array.
+  function buildRom(p, v, samples) {
+    const { arm9, footer } = patchArm9(p, v);
+    const dirs = p.dirs.map(d => ({ first: d.first, parent: d.parent, entries: d.entries.slice() }));
+    const files = p.files.slice();
+    const initId = findFile(p, "data/demo/ds10init.dat");
+    if (initId >= 0) files[initId] = setInitKit(p.files[initId]);
+    // new directory /data/smp with the samples; its file ids come after all existing ones
+    const dataDir = dirs[0].entries.find(e => e.dir && e.name === "data");
+    if (!dataDir) throw new Error("no /data folder");
+    const nums = Object.keys(samples).map(Number).sort((a, b) => a - b);
+    const smpId = 0xF000 + dirs.length;
+    dirs.push({ first: files.length, parent: dataDir.id, entries: nums.map(n => ({ dir: false, name: String(n).padStart(3, "0") + ".pcm" })) });
+    dirs[dataDir.id & 0x0FFF].entries.push({ dir: true, name: "smp", id: smpId });
+    nums.forEach(n => files.push(samples[n]));
+    const fnt = buildFnt(dirs);
+
+    // layout: header | arm9 (+footer) | arm9 ovt | arm7 | arm7 ovt | FNT | FAT | banner | files
+    let pos = p.headerSize || 0x4000;
+    const place = (len) => { const at = alignUp(pos); pos = at + len; return at; };
+    const arm9Off = place(arm9.length + footer.length);
+    const ovt9Off = p.arm9Ovt.length ? place(p.arm9Ovt.length) : 0;
+    const arm7Off = place(p.arm7.length);
+    const ovt7Off = p.arm7Ovt.length ? place(p.arm7Ovt.length) : 0;
+    const fntOff = place(fnt.length);
+    const fatOff = place(files.length * 8);
+    const bannerOff = p.banner.length ? place(p.banner.length) : 0;
+    const order = files.map((_, i) => i).sort((a, b) =>      // existing files keep their ROM order
+      (a < p.files.length ? p.files[a].byteOffset : Infinity) - (b < p.files.length ? p.files[b].byteOffset : Infinity) || a - b);
+    const fileOff = new Array(files.length);
+    for (const i of order) fileOff[i] = place(files[i].length);
+    const total = pos;
+
+    const rom = new Uint8Array(total);
+    rom.set(p.rom.subarray(0, p.headerSize || 0x4000));
+    rom.set(arm9, arm9Off); rom.set(footer, arm9Off + arm9.length);
+    if (ovt9Off) rom.set(p.arm9Ovt, ovt9Off);
+    rom.set(p.arm7, arm7Off);
+    if (ovt7Off) rom.set(p.arm7Ovt, ovt7Off);
+    rom.set(fnt, fntOff);
+    files.forEach((f, i) => { put32(rom, fatOff + i * 8, fileOff[i]); put32(rom, fatOff + i * 8 + 4, fileOff[i] + f.length); rom.set(f, fileOff[i]); });
+    if (bannerOff) rom.set(p.banner, bannerOff);
+
+    put32(rom, 0x20, arm9Off); put32(rom, 0x2C, arm9.length);
+    put32(rom, 0x50, ovt9Off); put32(rom, 0x54, p.arm9Ovt.length);
+    put32(rom, 0x30, arm7Off); put32(rom, 0x3C, p.arm7.length);
+    put32(rom, 0x58, ovt7Off); put32(rom, 0x5C, p.arm7Ovt.length);
+    put32(rom, 0x40, fntOff); put32(rom, 0x44, fnt.length);
+    put32(rom, 0x48, fatOff); put32(rom, 0x4C, files.length * 8);
+    put32(rom, 0x68, bannerOff);
+    put32(rom, 0x80, total);
+    let cap = 0;
+    while ((0x20000 << cap) < total) cap++;
+    rom[0x14] = cap;
+    put16(rom, 0x15E, crc16(rom.subarray(0, 0x15E)));
+    return rom;
+  }
+
+  return { parseRom, identify, buildRom, encodeSample, fitLoop, setInitKit, findFile, wavLoop, crc32, crc16, md5,
+           SLOT_SAMPLES, controls: n => { const i = n - 1; return { vco1: i >> 5, vco2: i >> 3 & 3, sync: i >> 2 & 1, pitch: i >> 1 & 1, bal: i & 1 }; } };
+})();
+
+
+const PATCHES = {"YJ9E":{"arm9Crc32":464903048,"arm9Size":488152,"itcmSrc":34041664,"itcmOldSize":800,"itcmGrow":8192,"edits":[[145948,"3a53ffeb0000a0e10000a0e10000a0e10000a0e1"],[207120,"fe16ffeb"],[209300,"6514"],[389228,"ab64"],[470908,"5885ff01"],[471012,"7c87ff01"],[471184,"5086ff01"],[488032,"40c79fe500408ce50630a0e1020000ea30c79fe500a08ce50930a0e1f0412de960d04de20140a0e1036844e0016b46e2686046e2830263e0006086e00600d6e5030000e28072a0e10700d6e5030000e2807187e00a00d6e5010000e2007187e0d800d6e1000050e3027087a20900d6e5400050e3017087a2017087e2c8869fe53000a0e3640057e3647047a2010080a2fbffffaa0a00c8e53000a0e30a0057e30a7047a2010080a2fbffffaa0b00c8e5300087e20c00c8e50050a0e30060a0e30d00a0e14f4100eb0d00a0e10810a0e1044200eb000050e32100000a0d00a0e10410a0e10420a0e34f4200eb0160d4e5000056e3b260d411016086120070d4e5010057e30600000a0d00a0e10410a0e10128a0e3444200eb000050e30050a0c10d0000ea0d00a0e1021984e20229a0e33d4200eb000050e3070000da8050a0e1022984e20410a0e1d130d2e00334a0e1b230c1e0010050e2faffffca0d00a0e1f24100ebe4c59fe52408a0e1030000e280c18ce00000a0e304008ce5016056e2060000baa510a0e1062041e0020052e3020000ba8227a0e100208ce504108ce50350c5e30000a0e3010855e3050084b7045085b2fbffffba04109ce5000051e30700000a020951e3050000aa00209ce5a22741e0822084e0f030d2e1812084e0b030c2e10000a0e360d08de2f081bde8a86ac0e5060055e31eff2fb10a0055e31eff2fc170402de92c0494e534c59fe500008ce5281494e5450a81e2186f90e55f1c81e2101081e2061881e00630a0e179ffffeb7080bde870402de90040a0e100559fe5005095e5000055e33400000a900195e5020050e33100001a3c0195e53c0090e5180090e5040050e12c00001a0810d4e5042094e50060a0e3011051e2030000ba0830d2e4020053e30160a003f9ffffea700195e5450a80e2183f90e5030185e04c5190e5000056e30500a0111201001b0400a0e1f6a400eb90649fe5000096e5000050e30000a013000086151200001a6c049fe5000090e5400190e5041096e5011021e2041086e5240080e2810180e0046090e5000090e51c2095e5002092e5f011d4e1011051e2030000bab230d2e0b230c0e0b230c6e0f9ffffea7080bde80400a0e17040bde8d9a400ea10402de90040a0e1c6af00eb10149fe50100a0e3000081e5f8039fe5000090e5000050e30600000a400190e51c2094e5002042e02c0052e30120a0030020a013042081e50400a0e11040bde870402de90040a0e1bc539fe5005095e5000055e31400000a900195e5020050e31100001a700195e5450a80e2183f90e5030185e04c5190e51c5095e5005095e51c6094e5f011d4e1000096e5046096e50520a0e1011051e2030000bab230d2e0b230c0e0b230c6e0f9ffffea7080bde8443094e52338a0e1033003e250c39fe583c18ce004309ce5000053e30500000a830755e11eff2fb100309ce5035045e0385084e51eff2fe1403094e5023043e2c50753e18337a0b1383084b51eff2fe1"],[489148,"f0412de90040a0e16a0000eb0050a0e30810d4e5042094e5011051e2030000ba0830d2e4020053e30150a003f9ffffea000055e32500000a0000a0e3000087e5080087e50c0087e5040098e5000050e31e00000a5f0000eb000050e31b00000a1410d0e5000051e31800000a1030a0e3910302e080029fe50210a0e1670000eb010080e20c0087e50810d4e5042094e5011051e2070000ba0030d2e5010053e305005313190053130030a0030030c205082082e2f5ffffea306094e50200a0e31000c6e50000a0e31100c6e5140086e50400a0e144ac00eb040098e5000050e33300000a3b0000eb000050e33000000a306094e50c1097e5000051e30c00000a142096e5012082e0ec319fe5030052e1142086b5260000ba143086e50010a0e30c1087e5001087e50110a0e31110c6e51f0000ea081097e5000051e31700001a1620d0e57f0052e3190000aa3330a0e3920301e0002097e5012082e2002087e5010052e1120000ba1520d0e51030a0e3920301e0011081e2140096e5270000eb010080e2040087e50100a0e3080087e50200a0e31000c6e50100a0e31100c6e5140096e5041097e5010050e00000a0b3140086e5f081bde8440094e52008a0e1030000e234719fe5007287e020819fe5808188e01eff2fe10c019fe5000090e5000050e31eff2f01700190e5441094e5001041e05f1c41e2101041e22118a0e1030051e30000a0831eff2f815a0c80e2a80080e2811261e0010080e01eff2fe10020a0e30130a0e3000051e18110a0918330a091fbffff9a010050e10100402003208220a330b0e1a110a011f9ffff1a0200a0e11eff2fe1"],[489824,"58c09fe5b020dce10030a0e3b030cce10810d0e5080051e3080000aa043090e5813183e00210a0e3001083e530109fe5041083e50810d0e5011081e20810c0e5b020cce11eff2fe1148aff01888aff015c87ff01188aff013333b300d489ff01080200043c7f00002f646174612f736d702f3030312e70636d"]]},"YJ9J":{"arm9Crc32":2385388484,"arm9Size":477080,"itcmSrc":34030592,"itcmOldSize":800,"itcmGrow":8192,"edits":[[145816,"5b53ffeb0000a0e10000a0e10000a0e10000a0e1"],[202856,"281bffeb"],[205036,"8f18"],[381572,"256cfe"],[459772,"5885ff01"],[459876,"7c87ff01"],[460048,"5086ff01"],[476960,"40c79fe500408ce50630a0e1020000ea30c79fe500a08ce50930a0e1f0412de960d04de20140a0e1036844e0016b46e2686046e2830263e0006086e00600d6e5030000e28072a0e10700d6e5030000e2807187e00a00d6e5010000e2007187e0d800d6e1000050e3027087a20900d6e5400050e3017087a2017087e2c8869fe53000a0e3640057e3647047a2010080a2fbffffaa0a00c8e53000a0e30a0057e30a7047a2010080a2fbffffaa0b00c8e5300087e20c00c8e50050a0e30060a0e30d00a0e12e4100eb0d00a0e10810a0e1e34100eb000050e32100000a0d00a0e10410a0e10420a0e32e4200eb0160d4e5000056e3b260d411016086120070d4e5010057e30600000a0d00a0e10410a0e10128a0e3234200eb000050e30050a0c10d0000ea0d00a0e1021984e20229a0e31c4200eb000050e3070000da8050a0e1022984e20410a0e1d130d2e00334a0e1b230c1e0010050e2faffffca0d00a0e1d14100ebe4c59fe52408a0e1030000e280c18ce00000a0e304008ce5016056e2060000baa510a0e1062041e0020052e3020000ba8227a0e100208ce504108ce50350c5e30000a0e3010855e3050084b7045085b2fbffffba04109ce5000051e30700000a020951e3050000aa00209ce5a22741e0822084e0f030d2e1812084e0b030c2e10000a0e360d08de2f081bde8a86ac0e5060055e31eff2fb10a0055e31eff2fc170402de9a00394e534c59fe500008ce59c1394e5450a81e2186f90e55f1c81e2101081e2061881e00630a0e179ffffeb7080bde870402de90040a0e100559fe5005095e5000055e33400000a900195e5020050e33100001a3c0195e53c0090e5180090e5040050e12c00001a0810d4e5042094e50060a0e3011051e2030000ba0830d2e4020053e30160a003f9ffffea700195e5450a80e2183f90e5030185e04c5190e5000056e30500a0111201001b0400a0e1d5a400eb90649fe5000096e5000050e30000a013000086151200001a6c049fe5000090e5400190e5041096e5011021e2041086e5240080e2810180e0046090e5000090e51c2095e5002092e5f011d4e1011051e2030000bab230d2e0b230c0e0b230c6e0f9ffffea7080bde80400a0e17040bde8b8a400ea10402de90040a0e1a5af00eb10149fe50100a0e3000081e5f8039fe5000090e5000050e30600000a400190e51c2094e5002042e02c0052e30120a0030020a013042081e50400a0e11040bde870402de90040a0e1bc539fe5005095e5000055e31400000a900195e5020050e31100001a700195e5450a80e2183f90e5030185e04c5190e51c5095e5005095e51c6094e5f011d4e1000096e5046096e50520a0e1011051e2030000bab230d2e0b230c0e0b230c6e0f9ffffea7080bde8443094e52338a0e1033003e250c39fe583c18ce004309ce5000053e30500000a830755e11eff2fb100309ce5035045e0385084e51eff2fe1403094e5023043e2c50753e18337a0b1383084b51eff2fe1"],[478076,"f0412de90040a0e16a0000eb0050a0e30810d4e5042094e5011051e2030000ba0830d2e4020053e30150a003f9ffffea000055e32500000a0000a0e3000087e5080087e50c0087e5040098e5000050e31e00000a5f0000eb000050e31b00000a1410d0e5000051e31800000a1030a0e3910302e080029fe50210a0e1670000eb010080e20c0087e50810d4e5042094e5011051e2070000ba0030d2e5010053e305005313190053130030a0030030c205082082e2f5ffffea306094e50200a0e31000c6e50000a0e31100c6e5140086e50400a0e123ac00eb040098e5000050e33300000a3b0000eb000050e33000000a306094e50c1097e5000051e30c00000a142096e5012082e0ec319fe5030052e1142086b5260000ba143086e50010a0e30c1087e5001087e50110a0e31110c6e51f0000ea081097e5000051e31700001a1620d0e57f0052e3190000aa3330a0e3920301e0002097e5012082e2002087e5010052e1120000ba1520d0e51030a0e3920301e0011081e2140096e5270000eb010080e2040087e50100a0e3080087e50200a0e31000c6e50100a0e31100c6e5140096e5041097e5010050e00000a0b3140086e5f081bde8440094e52008a0e1030000e234719fe5007287e020819fe5808188e01eff2fe10c019fe5000090e5000050e31eff2f01700190e5441094e5001041e05f1c41e2101041e22118a0e1030051e30000a0831eff2f815a0c80e2a80080e2811261e0010080e01eff2fe10020a0e30130a0e3000051e18110a0918330a091fbffff9a010050e10100402003208220a330b0e1a110a011f9ffff1a0200a0e11eff2fe1"],[478752,"58c09fe5b020dce10030a0e3b030cce10810d0e5080051e3080000aa043090e5813183e00210a0e3001083e530109fe5041083e50810d0e5011081e20810c0e5b020cce11eff2fe1148aff01888aff015c87ff01188aff013333b300d489ff01080200043c7f00002f646174612f736d702f3030312e70636d"]]},"YJ9P":{"arm9Crc32":2441243062,"arm9Size":488248,"itcmSrc":34041760,"itcmOldSize":800,"itcmGrow":8192,"edits":[[145948,"3a53ffeb0000a0e10000a0e10000a0e10000a0e1"],[207120,"fe16ffeb"],[209300,"6514"],[389164,"bb64"],[471004,"5885ff01"],[471108,"7c87ff01"],[471280,"5086ff01"],[488128,"40c79fe500408ce50630a0e1020000ea30c79fe500a08ce50930a0e1f0412de960d04de20140a0e1036844e0016b46e2686046e2830263e0006086e00600d6e5030000e28072a0e10700d6e5030000e2807187e00a00d6e5010000e2007187e0d800d6e1000050e3027087a20900d6e5400050e3017087a2017087e2c8869fe53000a0e3640057e3647047a2010080a2fbffffaa0a00c8e53000a0e30a0057e30a7047a2010080a2fbffffaa0b00c8e5300087e20c00c8e50050a0e30060a0e30d00a0e14f4100eb0d00a0e10810a0e1044200eb000050e32100000a0d00a0e10410a0e10420a0e34f4200eb0160d4e5000056e3b260d411016086120070d4e5010057e30600000a0d00a0e10410a0e10128a0e3444200eb000050e30050a0c10d0000ea0d00a0e1021984e20229a0e33d4200eb000050e3070000da8050a0e1022984e20410a0e1d130d2e00334a0e1b230c1e0010050e2faffffca0d00a0e1f24100ebe4c59fe52408a0e1030000e280c18ce00000a0e304008ce5016056e2060000baa510a0e1062041e0020052e3020000ba8227a0e100208ce504108ce50350c5e30000a0e3010855e3050084b7045085b2fbffffba04109ce5000051e30700000a020951e3050000aa00209ce5a22741e0822084e0f030d2e1812084e0b030c2e10000a0e360d08de2f081bde8a86ac0e5060055e31eff2fb10a0055e31eff2fc170402de92c0494e534c59fe500008ce5281494e5450a81e2186f90e55f1c81e2101081e2061881e00630a0e179ffffeb7080bde870402de90040a0e100559fe5005095e5000055e33400000a900195e5020050e33100001a3c0195e53c0090e5180090e5040050e12c00001a0810d4e5042094e50060a0e3011051e2030000ba0830d2e4020053e30160a003f9ffffea700195e5450a80e2183f90e5030185e04c5190e5000056e30500a0111201001b0400a0e1f6a400eb90649fe5000096e5000050e30000a013000086151200001a6c049fe5000090e5400190e5041096e5011021e2041086e5240080e2810180e0046090e5000090e51c2095e5002092e5f011d4e1011051e2030000bab230d2e0b230c0e0b230c6e0f9ffffea7080bde80400a0e17040bde8d9a400ea10402de90040a0e1c6af00eb10149fe50100a0e3000081e5f8039fe5000090e5000050e30600000a400190e51c2094e5002042e02c0052e30120a0030020a013042081e50400a0e11040bde870402de90040a0e1bc539fe5005095e5000055e31400000a900195e5020050e31100001a700195e5450a80e2183f90e5030185e04c5190e51c5095e5005095e51c6094e5f011d4e1000096e5046096e50520a0e1011051e2030000bab230d2e0b230c0e0b230c6e0f9ffffea7080bde8443094e52338a0e1033003e250c39fe583c18ce004309ce5000053e30500000a830755e11eff2fb100309ce5035045e0385084e51eff2fe1403094e5023043e2c50753e18337a0b1383084b51eff2fe1"],[489244,"f0412de90040a0e16a0000eb0050a0e30810d4e5042094e5011051e2030000ba0830d2e4020053e30150a003f9ffffea000055e32500000a0000a0e3000087e5080087e50c0087e5040098e5000050e31e00000a5f0000eb000050e31b00000a1410d0e5000051e31800000a1030a0e3910302e080029fe50210a0e1670000eb010080e20c0087e50810d4e5042094e5011051e2070000ba0030d2e5010053e305005313190053130030a0030030c205082082e2f5ffffea306094e50200a0e31000c6e50000a0e31100c6e5140086e50400a0e144ac00eb040098e5000050e33300000a3b0000eb000050e33000000a306094e50c1097e5000051e30c00000a142096e5012082e0ec319fe5030052e1142086b5260000ba143086e50010a0e30c1087e5001087e50110a0e31110c6e51f0000ea081097e5000051e31700001a1620d0e57f0052e3190000aa3330a0e3920301e0002097e5012082e2002087e5010052e1120000ba1520d0e51030a0e3920301e0011081e2140096e5270000eb010080e2040087e50100a0e3080087e50200a0e31000c6e50100a0e31100c6e5140096e5041097e5010050e00000a0b3140086e5f081bde8440094e52008a0e1030000e234719fe5007287e020819fe5808188e01eff2fe10c019fe5000090e5000050e31eff2f01700190e5441094e5001041e05f1c41e2101041e22118a0e1030051e30000a0831eff2f815a0c80e2a80080e2811261e0010080e01eff2fe10020a0e30130a0e3000051e18110a0918330a091fbffff9a010050e10100402003208220a330b0e1a110a011f9ffff1a0200a0e11eff2fe1"],[489920,"58c09fe5b020dce10030a0e3b030cce10810d0e5080051e3080000aa043090e5813183e00210a0e3001083e530109fe5041083e50810d0e5011081e20810c0e5b020cce11eff2fe1148aff01888aff015c87ff01188aff013333b300d489ff01080200043c7f00002f646174612f736d702f3030312e70636d"]]}};
+</script>
+<script>
+"use strict";
+const RATE = 32768, BUDGET = 9 * 1024 * 1024;
+const WAVES = ["Triangle", "Saw", "Square", "Noise"];
+const VERSION_NAMES = { YJ9P: "DS-10 Europe", YJ9E: "DS-10 USA", YJ9J: "DS-10 Japan" };
+let rom = null, version = null, romName = "";
+const samples = [];                 // {id, name, file, pcm, loop, eightBit, noLoop, place, seconds}
+let nextId = 1;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------- ROM ----------
+function setupDrop(drop, input, onFiles) {
+  drop.onclick = () => input.click();
+  drop.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } };
+  input.onchange = () => { onFiles([...input.files]); input.value = ""; };
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); onFiles([...e.dataTransfer.files]); };
+}
+setupDrop($("romDrop"), $("romFile"), async files => {
+  const f = files[0]; if (!f) return;
+  const st = $("romStatus");
+  try {
+    const p = DS10.parseRom(new Uint8Array(await f.arrayBuffer()));
+    const id = DS10.identify(p, PATCHES);
+    if (!id.ok) { rom = version = null; st.innerHTML = `<span class="pill bad">${esc(id.reason)}</span>`; }
+    else {
+      rom = p; version = id.version; romName = f.name.replace(/\.nds$/i, "");
+      st.innerHTML = `<span class="pill ok">${esc(VERSION_NAMES[p.code] || p.code)} (${p.code}) recognised</span><span class="muted">${esc(f.name)}</span>`;
+    }
+  } catch (e) { rom = version = null; st.innerHTML = `<span class="pill bad">Couldn't read this file as a DS ROM.</span>`; }
+  refresh();
+});
+
+// ---------- samples ----------
+// 16-bit PCM WAV at 32768 Hz: read the samples straight from the file (bit-exact in every browser).
+function rawWav(bytes) {
+  const str = (o, n) => String.fromCharCode(...bytes.subarray(o, o + n));
+  if (str(0, 4) !== "RIFF" || str(8, 4) !== "WAVE") return null;
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let fmt = null, i = 12;
+  while (i + 8 <= bytes.length) {
+    const id = str(i, 4), size = dv.getUint32(i + 4, true), body = i + 8;
+    if (id === "fmt ") fmt = { tag: dv.getUint16(body, true), ch: dv.getUint16(body + 2, true), rate: dv.getUint32(body + 4, true), bits: dv.getUint16(body + 14, true) };
+    else if (id === "data") {
+      if (!fmt || fmt.tag !== 1 || fmt.bits !== 16 || fmt.rate !== RATE) return null;
+      const frames = Math.floor(Math.min(size, bytes.length - body) / (2 * fmt.ch)), pcm = new Int16Array(frames);
+      for (let f = 0; f < frames; f++) {
+        let s = 0; for (let c = 0; c < fmt.ch; c++) s += dv.getInt16(body + (f * fmt.ch + c) * 2, true);
+        pcm[f] = Math.round(s / fmt.ch);
+      }
+      return pcm;
+    }
+    i = body + size + (size & 1);
+  }
+  return null;
+}
+async function decode(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let pcm = rawWav(bytes);
+  if (!pcm) {                                                   // anything else: the browser decodes
+    const ctx = new OfflineAudioContext(1, 1, RATE);            // and resamples to RATE
+    const buf = await ctx.decodeAudioData(bytes.slice().buffer);
+    const n = buf.length, ch = buf.numberOfChannels;
+    const data = [...Array(ch)].map((_, c) => buf.getChannelData(c));
+    pcm = new Int16Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0; for (let c = 0; c < ch; c++) s += data[c][i];
+      s /= ch;                                                  // decoders scale +/- by 32767/32768
+      pcm[i] = Math.max(-32768, Math.min(32767, Math.round(s * (s >= 0 ? 32767 : 32768))));
+    }
+  }
+  let loop = null;
+  const wl = DS10.wavLoop(bytes);
+  if (wl) loop = { start: Math.round(wl.start * RATE / wl.rate), end: Math.round(wl.end * RATE / wl.rate) };
+  return { pcm, loop };
+}
+function freePlace(from = 1) { for (let n = from; n <= 128; n++) if (!samples.some(s => s.place === n)) return n; return null; }
+setupDrop($("wavDrop"), $("wavFile"), async files => {
+  $("buildStatus").textContent = `Reading ${files.length} file${files.length === 1 ? "" : "s"}…`;
+  for (const f of files) {
+    try {
+      const { pcm, loop } = await decode(f);
+      const m = f.name.match(/^(\d{1,3})\s*[-_. ]?\s*(.*?)\.[^.]+$/);
+      const base = f.name.replace(/\.[^.]+$/, "");
+      let place = m && +m[1] >= 1 && +m[1] <= 128 && !samples.some(s => s.place === +m[1]) ? +m[1] : freePlace();
+      samples.push({ id: nextId++, name: (m && m[2]) || base, file: f.name, pcm, loop, eightBit: /\.8bit/i.test(f.name),
+                     noLoop: /\.noloop/i.test(f.name), place, seconds: pcm.length / RATE });
+    } catch (e) {
+      samples.push({ id: nextId++, name: f.name, file: f.name, error: "Not an audio file this browser can read." });
+    }
+  }
+  refresh();
+});
+
+function encoded(s) {                            // the .pcm file for this sample, cached
+  const key = `${s.eightBit}|${s.noLoop}`;
+  if (s._key === key) return s._enc;
+  let pcm = s.pcm, loopStart = null; s.shortened = false;
+  if (s.loop && !s.noLoop) {
+    const r = DS10.fitLoop(pcm, s.loop.start, s.loop.end);
+    pcm = r.pcm; loopStart = r.loopStart; s.shortened = r.shortened;
+  }
+  s._enc = DS10.encodeSample(pcm, s.eightBit, loopStart); s._key = key;
+  s.looped = s._enc[1] === 1;
+  return s._enc;
+}
+
+let audio = null, playing = null;
+function play(s, btn) {
+  audio = audio || new AudioContext();
+  if (playing) { try { playing.src.stop(); } catch (e) {} playing.btn.textContent = "▶"; if (playing.btn === btn) { playing = null; return; } }
+  const enc = encoded(s), eight = enc[0] === 1, n = eight ? enc.length - 4 : (enc.length - 4) / 2;
+  const buf = audio.createBuffer(1, n, RATE), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = eight ? ((enc[4 + i] << 24 >> 24) / 128) : (((enc[4 + 2 * i] | enc[5 + 2 * i] << 8) << 16 >> 16) / 32768);
+  const src = audio.createBufferSource(); src.buffer = buf;
+  if (enc[1]) { src.loop = true; src.loopStart = (enc[2] | enc[3] << 8) / RATE; src.loopEnd = n / RATE; }
+  src.connect(audio.destination); src.start();
+  btn.textContent = "■"; playing = { src, btn };
+  src.onended = () => { if (playing && playing.src === src) { btn.textContent = "▶"; playing = null; } };
+  if (enc[1]) setTimeout(() => { if (playing && playing.src === src) { src.stop(); } }, 3000);
+}
+
+function renderList() {
+  const list = $("list"); list.innerHTML = "";
+  samples.forEach(s => {
+    const row = document.createElement("div"); row.className = "row";
+    if (s.error) { row.innerHTML = `<span></span><span class="name">${esc(s.name)}<span class="meta">${esc(s.error)}</span></span><span></span><span></span><span></span>`; }
+    else {
+      encoded(s);
+      row.innerHTML = `<button class="icon" title="Play">▶</button>
+        <span class="name">${esc(s.name)}<span class="meta">${s.seconds.toFixed(2)} s${s.seconds > 1 && !s.looped ? " · cut to 1 s" : ""}</span></span>
+        <span>${s.loop ? `<label class="small"><input type="checkbox" data-k="noLoop" ${s.noLoop ? "" : "checked"}> <span class="tag${s.looped ? " loop" : ""}">${s.looped && s.shortened ? "loop (shortened)" : "loop"}</span></label>` : ""}</span>
+        <label class="small"><input type="checkbox" data-k="eightBit" ${s.eightBit ? "checked" : ""}> 8-bit</label>
+        <input class="num" type="number" min="1" max="128" placeholder="#" value="${s.place || ""}" aria-label="Place for ${esc(s.name)}">`;
+      row.querySelector("button").onclick = e => play(s, e.target);
+      row.querySelectorAll("input[type=checkbox]").forEach(cb => cb.onchange = () => {
+        if (cb.dataset.k === "noLoop") s.noLoop = !cb.checked; else s.eightBit = cb.checked; refresh();
+      });
+      row.querySelector(".num").onchange = e => {
+        const n = parseInt(e.target.value, 10);
+        samples.forEach(o => { if (o !== s && o.place === n) o.place = null; });
+        s.place = n >= 1 && n <= 128 ? n : null; refresh();
+      };
+    }
+    const del = document.createElement("button"); del.className = "icon"; del.textContent = "×"; del.title = "Remove";
+    del.onclick = () => { samples.splice(samples.indexOf(s), 1); refresh(); };
+    row.append(del); list.append(row);
+  });
+}
+
+function renderGrid() {
+  const cols = []; for (let s = 0; s < 2; s++) for (let p = 0; p < 2; p++) for (let b = 0; b < 2; b++) cols.push([s, p, b]);
+  const head = cols.map(([s, p, b]) => `<th>bal ${b ? "→" : "←"}<br>pitch ${p ? "→" : "←"}<br>sync ${s ? "on" : "off"}</th>`).join("");
+  let html = "";
+  for (let v1 = 0; v1 < 4; v1++) {
+    html += `<div><h3>VCO1 ${WAVES[v1]} · ${String(v1 * 32 + 1).padStart(3, "0")}–${String(v1 * 32 + 32).padStart(3, "0")}</h3><div class="gridwrap"><table><thead><tr><th class="row-h"></th>${head}</tr></thead><tbody>`;
+    for (let v2 = 0; v2 < 4; v2++) {
+      html += `<tr><th class="row-h">VCO2 ${WAVES[v2]}</th>`;
+      cols.forEach(([s, p, b]) => {
+        const n = v1 * 32 + v2 * 8 + s * 4 + p * 2 + b + 1, sm = samples.find(x => x.place === n && !x.error);
+        html += sm ? `<td class="filled"><div class="n">${String(n).padStart(3, "0")}<span><button data-play="${sm.id}" title="Play">▶</button><button data-clear="${sm.id}" title="Remove from this place">×</button></span></div><input data-name="${sm.id}" value="${esc(sm.name)}" aria-label="Name for place ${n}"></td>`
+                   : `<td class="empty" data-n="${n}"><div class="n">${String(n).padStart(3, "0")}</div></td>`;
+      });
+      html += "</tr>";
+    }
+    html += "</tbody></table></div></div>";
+  }
+  const g = $("grid"); g.innerHTML = html;
+  const byId = id => samples.find(s => s.id === +id);
+  g.querySelectorAll("[data-play]").forEach(b => b.onclick = () => play(byId(b.dataset.play), b));
+  g.querySelectorAll("[data-clear]").forEach(b => b.onclick = () => { byId(b.dataset.clear).place = null; refresh(); });
+  g.querySelectorAll("[data-name]").forEach(i => i.onchange = () => { byId(i.dataset.name).name = i.value.trim() || "sample"; renderList(); });
+  g.querySelectorAll("td").forEach(td => td.onmouseenter = () => {
+    const n = td.dataset.n || td.querySelector(".n").textContent.slice(0, 3), c = DS10.controls(+n);
+    $("lcd").textContent = `${String(+n).padStart(3, "0")}: VCO1 ${WAVES[c.vco1]} · VCO2 ${WAVES[c.vco2]} · balance ${c.bal ? "right" : "left"} · VCO2 pitch ${c.pitch ? "centre/right" : "left"} · sync ${c.sync ? "on" : "off"}`;
+  });
+}
+
+function refresh() {
+  renderList(); renderGrid();
+  const placed = samples.filter(s => s.place && !s.error);
+  const bytes = placed.reduce((t, s) => t + encoded(s).length, 0);
+  $("libCount").textContent = `${placed.length} of 128 places · ${placed.filter(s => s.looped).length} looped`;
+  $("meterText").textContent = `${Math.round(bytes / 1024).toLocaleString()} KB of 9,216 KB`;
+  $("meterFill").style.width = Math.min(100, bytes / BUDGET * 100) + "%";
+  $("meter").classList.toggle("over", bytes > BUDGET);
+  const ready = rom && placed.length && bytes <= BUDGET;
+  $("build").disabled = !ready;
+  $("buildStatus").textContent = !rom ? "Add your DS-10 ROM." : !placed.length ? "Add at least one sample." :
+    bytes > BUDGET ? "Too big: remove samples or tick 8-bit on some." : "Ready.";
+}
+
+// ---------- build ----------
+function download(name, data, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function cheatSheet(placed) {
+  const cols = []; for (let s = 0; s < 2; s++) for (let p = 0; p < 2; p++) for (let b = 0; b < 2; b++) cols.push([s, p, b]);
+  const head = cols.map(([s, p, b]) => `<th>bal ${b ? "→" : "←"}<br>pitch ${p ? "→" : "←"}<br>sync ${s ? "on" : "off"}</th>`).join("");
+  let body = "";
+  for (let v1 = 0; v1 < 4; v1++) {
+    body += `<h2>VCO1 ${WAVES[v1]} <small>${String(v1 * 32 + 1).padStart(3, "0")}–${String(v1 * 32 + 32).padStart(3, "0")}</small></h2><table><tr><th></th>${head}</tr>`;
+    for (let v2 = 0; v2 < 4; v2++) {
+      body += `<tr><th>VCO2 ${WAVES[v2]}</th>`;
+      cols.forEach(([s, p, b]) => {
+        const n = v1 * 32 + v2 * 8 + s * 4 + p * 2 + b + 1, sm = placed.find(x => x.place === n);
+        body += sm ? `<td><b>${String(n).padStart(3, "0")}</b>${esc(sm.name)}${sm.looped ? " <i>loop</i>" : ""}${sm.eightBit ? " <i>8-bit</i>" : ""}</td>` : `<td class="e"><b>${String(n).padStart(3, "0")}</b>—</td>`;
+      });
+      body += "</tr>";
+    }
+    body += "</table>";
+  }
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DS-10 Sample Cheat Sheet</title><style>
+:root{--bg:#fff;--fg:#1b1e23;--muted:#666;--line:#ccc;--e:#f3f3f3;--a:#2b55c9}
+@media (prefers-color-scheme:dark){:root{--bg:#15181d;--fg:#e4e7eb;--muted:#999;--line:#333;--e:#1c1f24;--a:#8aa6ff;color-scheme:dark}}
+body{margin:0;padding:20px 16px;background:var(--bg);color:var(--fg);font:13px/1.4 -apple-system,system-ui,sans-serif}
+h1{font-size:20px;margin:0 0 4px}p{color:var(--muted);margin:0 0 16px;max-width:80ch}h2{font-size:15px;margin:18px 0 6px}h2 small{color:var(--muted);font-weight:400}
+table{border-collapse:collapse;width:100%;table-layout:fixed}th,td{border:1px solid var(--line);padding:4px;vertical-align:top;text-align:left;overflow-wrap:anywhere}
+th{font-weight:500;color:var(--muted);font-size:11px}td b{display:block;color:var(--a);font:600 11px ui-monospace,monospace}td.e{background:var(--e);color:var(--muted)}i{color:var(--muted);font-size:11px}
+@media print{body{padding:0}h2{break-after:avoid}table{break-inside:avoid}}
+</style></head><body><h1>DS-10 Sample Cheat Sheet</h1><p>${placed.length} samples. In the drum editor: VCO1 wave picks the group, VCO2 wave the row; balance (from the middle up = →), VCO2 pitch (centre = →) and sync the column. Looped samples: EG ATT = fade-in, EG SUS = hold (127 = forever), EG DEC = fade-out.</p>${body}</body></html>`;
+}
+$("build").onclick = async () => {
+  const btn = $("build"); btn.disabled = true; $("buildStatus").textContent = "Building…";
+  await new Promise(r => setTimeout(r, 30));
+  try {
+    const placed = samples.filter(s => s.place && !s.error);
+    const files = {}; placed.forEach(s => files[s.place] = encoded(s));
+    const out = DS10.buildRom(rom, version, files);
+    download(`${romName} - samples.nds`, out, "application/octet-stream");
+    download(`${romName} - samples cheat sheet.html`, cheatSheet(placed), "text/html");
+    $("buildStatus").textContent = `Done: ${(out.length / 1048576).toFixed(1)} MB ROM and a cheat sheet saved to your downloads.`;
+  } catch (e) {
+    $("buildStatus").textContent = "Build failed: " + e.message;
+  }
+  btn.disabled = false;
+};
+refresh();
+</script>
+</body></html>

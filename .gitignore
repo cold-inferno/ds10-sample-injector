@@ -1,0 +1,12 @@
+# ROMs, saves and savestates never go in this repository
+*.nds
+*.sav
+*.mln
+ROMZ/
+# local tools and build output
+rom-patch/bin/
+rom-patch/build/
+injector/test/out-*.nds
+injector/test/expected-crc.json
+__pycache__/
+.DS_Store
