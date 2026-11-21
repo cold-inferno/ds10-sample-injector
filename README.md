@@ -1,6 +1,6 @@
 # DS-10 Sample Injector
 
-Please note: Artificially Assisted Software.
+Please note: Software developed with Artificial Assistance.
 
 Turn the four synthesised drums of the **Korg DS-10** (Nintendo DS) into **sample players**: up to 128 of
 your own sounds in one ROM, picked per drum with five knobs in the drum editor. It supports looping, and
